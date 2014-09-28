@@ -3,38 +3,24 @@ require 'tk'
 class RotatorDisplay
   def read_azimuth
     Tk.after @update_interval, proc {read_azimuth}
-    @azimuth = rand(359.0)
-    puts "azimuth = #{@azimuth}"
-    puts "read_azimuth"
+    @azimuth = (@azimuth + 1.0) % 360.0
   end
   
   def refresh_display
     Tk.after @update_interval, proc {refresh_display}
-    needle_end_x = (@center_x + (@radius / 4)) * Math.cos(@azimuth * (Math::PI / 180.0)).round.abs
-    needle_end_y = (@center_y + (@radius / 4)) * Math.sin(@azimuth * (Math::PI / 180.0)).round.abs
-#   if @needle
-#     puts 'reusing existing needle'
-#     puts "center_x = #{@center_x}, center_y = #{@center_y}, needle_end_x = #{needle_end_x}, needle_end_y = #{needle_end_y}"
-#     coords = @needle.coords
-#     coords[-2] = needle_end_x
-#     coords[-1] = needle_end_y
-#     @needle.coords = coords
-#   else
-      if @needle
-        @needle.delete
-      end
-      puts 'creating needle'
-      puts "center_x = #{@center_x}, center_y = #{@center_y}, needle_end_x = #{needle_end_x}, needle_end_y = #{needle_end_y}"
+    needle_end_x = (@center_x + (@radius * Math.cos(@azimuth * (Math::PI / 180.0)))).round.abs
+    needle_end_y = (@center_y + (@radius * Math.sin(@azimuth * (Math::PI / 180.0)))).round.abs
+    if @needle
+      @needle.coords = [[@center_x, @center_y], [needle_end_x, needle_end_y]].sort.flatten
+    else
       @needle = TkcLine.new(@canvas, *([[@center_x, @center_y], [needle_end_x, needle_end_y]].sort)) {
         width 5
         fill 'yellow'
       }
-#    end
-    puts "refresh_display"
+    end
   end
 
   def initialize_face
-    @radius = 200.0
     diameter = @radius * 2.0
     margin = 50
     @center_x = @center_y = (@radius + (margin / 2))
@@ -88,7 +74,8 @@ class RotatorDisplay
     menu.pack('fill' => 'x', 'side' => 'top')
     @heading_offset = 90.0 # degrees
     @azimuth = 0.0
-    @update_interval = 1000
+    @radius = 200.0
+    @update_interval = 25
 
     initialize_face
     read_azimuth

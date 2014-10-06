@@ -1,10 +1,17 @@
 #!/usr/bin/env ruby
 require 'tk'
+require 'serialport'
 
 class RotatorDisplay
   def read_azimuth
     Tk.after @update_interval, proc {read_azimuth}
-    @azimuth = (@azimuth + 1.0) % 360.0
+    @serial_port.puts "C\n"
+    response = @serial_port.gets.chomp
+    if response =~ /^\+0(\d+)/
+      @azimuth = $1.to_f % 360.0
+    else
+      puts "Could not determine azimuth from string '#{response}'"
+    end
   end
 
   def drawing_azimuth; @azimuth + @azimuth_draw_offset; end
@@ -77,7 +84,7 @@ class RotatorDisplay
     }
   end
   
-  def initialize
+  def initialize(options)
     @top = TkRoot.new { title 'Rotator' }
     menu_spec = [
       [
@@ -95,7 +102,12 @@ class RotatorDisplay
     @azimuth_draw_offset = -90.0 # degrees
     @azimuth = 0.0
     @radius = 200.0
-    @update_interval = 25 # ms
+    @update_interval = 250 # ms
+
+    data_bits = 8
+    stop_bits = 1
+    parity = SerialPort::NONE
+    @serial_port = SerialPort.new(options[:serial_port], options[:baud], data_bits, stop_bits, parity)
 
     initialize_face
     read_azimuth
@@ -104,6 +116,6 @@ class RotatorDisplay
 end
 
 
-rd = RotatorDisplay.new
+rd = RotatorDisplay.new(:serial_port => 'COM3', :baud => 9600)
 Tk.mainloop
 

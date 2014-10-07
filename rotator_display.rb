@@ -5,7 +5,7 @@ require 'serialport'
 class RotatorDisplay
   def read_azimuth
     Tk.after @update_interval, proc {read_azimuth}
-    @serial_port.puts "C\n"
+    @serial_port.print "C\r"
     response = @serial_port.gets.chomp
     if response =~ /^\+0(\d+)/
       @azimuth = $1.to_f % 360.0
@@ -15,7 +15,7 @@ class RotatorDisplay
   end
 
   def drawing_azimuth; @azimuth + @azimuth_draw_offset; end
-  def display_azimuth; (@azimuth + @azimuth_offset).to_i.to_s + "\xC2\xB0"; end
+  def display_azimuth; (@azimuth + @azimuth_offset).to_i.to_s + "\xB0"; end
   
   def refresh_display
     Tk.after @update_interval, proc {refresh_display}
@@ -30,6 +30,20 @@ class RotatorDisplay
       }
     end
     @az_display.text = display_azimuth
+  end
+
+  def maybe_rotate
+    Tk.after @update_interval, proc {maybe_rotate}
+    if @target_azimuth != @azimuth and (@target_azimuth < ((@azimuth + 358.0) % 360.0) or @target_azimuth > ((@azimuth + 362.0) % 360.0))
+      if not @command_pending
+        puts "Sending command 'M%03d\\r'" % @target_azimuth.round.to_i
+        @serial_port.print "M%03d\r" % @target_azimuth.round.to_i
+        @command_pending = true
+      end
+      puts "target #{@target_azimuth.round.to_i} differs from actual #{@azimuth}; requested rotation to #{@target_azimuth.round.to_i}"
+    else
+      @command_pending = false
+    end
   end
 
   def initialize_face
@@ -74,6 +88,15 @@ class RotatorDisplay
       end
     }
 
+    @canvas.bind("Button-1",
+                 proc do |event|
+                   x = event.x - @center_x
+                   y = event.y - @center_y
+                   theta = Math.atan2(y, x)
+                   r = Math.hypot(x, y)
+                   @target_azimuth = ((theta * (180.0/Math::PI))+450.0) % 360.0
+                 end)
+
     @az_display = TkLabel.new(@top) {
       text '360'
       borderwidth 3
@@ -102,16 +125,20 @@ class RotatorDisplay
     @azimuth_draw_offset = -90.0 # degrees
     @azimuth = 0.0
     @radius = 200.0
-    @update_interval = 250 # ms
+    @update_interval = 250  # ms
 
     data_bits = 8
     stop_bits = 1
     parity = SerialPort::NONE
     @serial_port = SerialPort.new(options[:serial_port], options[:baud], data_bits, stop_bits, parity)
+    @serial_port.flow_control = SerialPort::NONE
 
     initialize_face
     read_azimuth
+    @target_azimuth = @azimuth
+    @command_pending = false
     refresh_display
+    maybe_rotate
   end
 end
 

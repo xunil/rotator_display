@@ -16,6 +16,8 @@ class RotatorDisplay
 
   def drawing_azimuth; @azimuth + @azimuth_draw_offset; end
   def display_azimuth; (@azimuth + @azimuth_offset).to_i.to_s + "\xB0"; end
+  # returns [r, theta]
+  def cartesian_to_polar(x, y); [Math.hypot(x, y), Math.atan2(y, x)]; end
   
   def refresh_display
     Tk.after @update_interval, proc {refresh_display}
@@ -32,6 +34,23 @@ class RotatorDisplay
     @az_display.text = display_azimuth
   end
 
+  def draw_motion_needle(event)
+    x = event.x - @center_x
+    y = event.y - @center_y;
+    r, theta = cartesian_to_polar(x,y)
+    motion_needle_azimuth = (((theta * (180.0/Math::PI))+450.0) % 360.0) + @azimuth_draw_offset
+    needle_end_x = (@center_x + (@radius * Math.cos(motion_needle_azimuth * (Math::PI / 180.0)))).round.abs
+    needle_end_y = (@center_y + (@radius * Math.sin(motion_needle_azimuth * (Math::PI / 180.0)))).round.abs
+    if @motion_needle
+      @motion_needle.coords = [[@center_x, @center_y], [needle_end_x, needle_end_y]].sort.flatten
+    else
+      @motion_needle = TkcLine.new(@canvas, *([[@center_x, @center_y], [needle_end_x, needle_end_y]].sort)) {
+        width 3
+        fill 'gray'
+      }
+    end
+  end
+
   def maybe_rotate
     Tk.after @update_interval, proc {maybe_rotate}
     if @target_azimuth != @azimuth and (@target_azimuth < ((@azimuth + 358.0) % 360.0) or @target_azimuth > ((@azimuth + 362.0) % 360.0))
@@ -39,10 +58,12 @@ class RotatorDisplay
         puts "Sending command 'M%03d\\r'" % @target_azimuth.round.to_i
         @serial_port.print "M%03d\r" % @target_azimuth.round.to_i
         @command_pending = true
+	@update_interval = 250 # ms
       end
       puts "target #{@target_azimuth.round.to_i} differs from actual #{@azimuth}; requested rotation to #{@target_azimuth.round.to_i}"
     else
       @command_pending = false
+      @update_interval = 1000 # ms
     end
   end
 
@@ -88,14 +109,15 @@ class RotatorDisplay
       end
     }
 
-    @canvas.bind("Button-1",
-                 proc do |event|
-                   x = event.x - @center_x
-                   y = event.y - @center_y
-                   theta = Math.atan2(y, x)
-                   r = Math.hypot(x, y)
-                   @target_azimuth = ((theta * (180.0/Math::PI))+450.0) % 360.0
-                 end)
+    @canvas.bind("Button-1", proc {|event|
+      x = event.x - @center_x
+      y = event.y - @center_y;
+      r, theta = cartesian_to_polar(x,y)
+      @target_azimuth = ((theta * (180.0/Math::PI))+450.0) % 360.0
+    })
+
+    @canvas.bind("Motion", proc {|event| draw_motion_needle(event)})
+    @canvas.bind("Leave", proc {|event| if @motion_needle; @motion_needle.delete; @motion_needle = nil; end})
 
     @az_display = TkLabel.new(@top) {
       text '360'
@@ -125,7 +147,7 @@ class RotatorDisplay
     @azimuth_draw_offset = -90.0 # degrees
     @azimuth = 0.0
     @radius = 200.0
-    @update_interval = 250  # ms
+    @update_interval = 1000  # ms
 
     data_bits = 8
     stop_bits = 1

@@ -16,6 +16,7 @@ class RotatorDisplay
 
   def drawing_azimuth; @azimuth + @azimuth_draw_offset; end
   def display_azimuth; (@azimuth + @azimuth_offset).to_i.to_s + "\xB0"; end
+  def display_motion_needle_azimuth; (@motion_needle_azimuth + @azimuth_draw_offset + 180.0).to_i.to_s + "\xB0"; end
   # returns [r, theta]
   def cartesian_to_polar(x, y); [Math.hypot(x, y), Math.atan2(y, x)]; end
   
@@ -34,13 +35,30 @@ class RotatorDisplay
     @az_display.text = display_azimuth
   end
 
-  def draw_motion_needle(event)
+  def begin_motion(event); end
+
+  def end_motion(event)
+    if @motion_needle
+	    @motion_needle.delete
+      @motion_needle = nil
+    end
+    if @motion_azimuth_text
+	    @motion_azimuth_text.delete
+      @motion_azimuth_text = nil
+    end
+  end
+
+  def update_motion_needle_azimuth(event)
     x = event.x - @center_x
     y = event.y - @center_y;
     r, theta = cartesian_to_polar(x,y)
-    motion_needle_azimuth = (((theta * (180.0/Math::PI))+450.0) % 360.0) + @azimuth_draw_offset
-    needle_end_x = (@center_x + (@radius * Math.cos(motion_needle_azimuth * (Math::PI / 180.0)))).round.abs
-    needle_end_y = (@center_y + (@radius * Math.sin(motion_needle_azimuth * (Math::PI / 180.0)))).round.abs
+    @motion_needle_azimuth = (((theta * (180.0/Math::PI))+450.0) % 360.0) + @azimuth_draw_offset
+  end
+  
+  def draw_motion_needle(event)
+    needle_end_x = (@center_x + (@radius * Math.cos(@motion_needle_azimuth * (Math::PI / 180.0)))).round.abs
+    needle_end_y = (@center_y + (@radius * Math.sin(@motion_needle_azimuth * (Math::PI / 180.0)))).round.abs
+
     if @motion_needle
       @motion_needle.coords = [[@center_x, @center_y], [needle_end_x, needle_end_y]].sort.flatten
     else
@@ -48,6 +66,20 @@ class RotatorDisplay
         width 3
         fill 'gray'
       }
+    end
+  end
+
+  def draw_motion_azimuth_text(event)
+    if @motion_azimuth_text
+      @motion_azimuth_text.text = display_motion_needle_azimuth
+    else
+      az_text_x = ((@radius*1.625) * Math.cos(@center_x * (Math::PI / 180.0))).round.abs
+      az_text_y = (@radius * Math.sin(@center_y * (Math::PI / 180.0))).round.abs
+      @motion_azimuth_text = TkcText.new(@canvas, az_text_x, az_text_y) {
+          text '0'
+          font TkFont.new("family" => 'Helvetica', "size" => 18)
+          fill 'red'
+        }
     end
   end
 
@@ -116,8 +148,13 @@ class RotatorDisplay
       @target_azimuth = ((theta * (180.0/Math::PI))+450.0) % 360.0
     })
 
-    @canvas.bind("Motion", proc {|event| draw_motion_needle(event)})
-    @canvas.bind("Leave", proc {|event| if @motion_needle; @motion_needle.delete; @motion_needle = nil; end})
+    @canvas.bind("Enter", proc {|event| begin_motion(event)})
+    @canvas.bind("Motion", proc {|event|
+      update_motion_needle_azimuth(event)
+      draw_motion_needle(event)
+      draw_motion_azimuth_text(event)
+    })
+    @canvas.bind("Leave", proc {|event| end_motion(event)})
 
     @az_display = TkLabel.new(@top) {
       text '360'
@@ -148,11 +185,14 @@ class RotatorDisplay
     @azimuth = 0.0
     @radius = 200.0
     @update_interval = 1000  # ms
+    @draw_motion_needle_azimuth = false
 
     data_bits = 8
     stop_bits = 1
     parity = SerialPort::NONE
+    puts "Before serialport"
     @serial_port = SerialPort.new(options[:serial_port], options[:baud], data_bits, stop_bits, parity)
+    puts "After serialport"
     @serial_port.flow_control = SerialPort::NONE
 
     initialize_face
@@ -165,6 +205,6 @@ class RotatorDisplay
 end
 
 
-rd = RotatorDisplay.new(:serial_port => 'COM3', :baud => 9600)
+rd = RotatorDisplay.new(:serial_port => 'COM6', :baud => 9600)
 Tk.mainloop
 
